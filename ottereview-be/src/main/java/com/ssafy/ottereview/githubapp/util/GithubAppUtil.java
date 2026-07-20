@@ -107,6 +107,11 @@ public class GithubAppUtil {
                     .withAppInstallationToken(installationToken.getToken())
                     .build();
         } catch (Exception e) {
+            log.error(
+                    "GitHub Installation Access Token 발급 실패. installationId={}",
+                    installationId,
+                    e
+            );
             throw new BusinessException(GithubAppErrorCode.GITHUB_APP_CREATE_FAILED);
         }
     }

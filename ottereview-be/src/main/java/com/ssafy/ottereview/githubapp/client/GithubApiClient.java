@@ -64,6 +64,11 @@ public class GithubApiClient {
             
             
         } catch (IOException e) {
+            log.error(
+                    "GitHub App 설치 정보 조회 실패. installationId={}",
+                    installationId,
+                    e
+            );
             throw new BusinessException(GithubAppErrorCode.GITHUB_APP_ACCOUNT_NOT_FOUND);
         }
     }

@@ -46,6 +46,7 @@ services:
       - ./.env               # Compose 파일이 있는 디렉터리에 복사된 .env
     environment:
         - SPRING_PROFILES_ACTIVE=docker
+        - GITHUB_APP_PRIVATE_KEY_PATH=file:/app/config/github-app-private-key.der
     restart: unless-stopped
     networks:
       - springboot-mysql-net
