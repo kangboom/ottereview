@@ -1,7 +1,6 @@
 package com.ssafy.ottereview.pullrequest.entity;
 
 import com.ssafy.ottereview.common.entity.BaseEntity;
-import com.ssafy.ottereview.githubapp.dto.GithubPrResponse;
 import com.ssafy.ottereview.pullrequest.dto.response.PullRequestResponse;
 import com.ssafy.ottereview.repo.entity.Repo;
 import com.ssafy.ottereview.user.entity.User;
@@ -17,9 +16,9 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 import java.net.URL;
 import java.time.LocalDateTime;
-import java.util.Objects;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
@@ -32,24 +31,36 @@ import org.hibernate.annotations.OnDeleteAction;
 @Getter
 @Builder
 @Entity
-@Table(name = "pull_request")
+@Table(
+        name = "pull_request",
+        uniqueConstraints = {
+                @UniqueConstraint(
+                        name = "uk_pull_request_github_id",
+                        columnNames = "github_id"
+                ),
+                @UniqueConstraint(
+                        name = "uk_pull_request_repo_number",
+                        columnNames = {"repo_id", "github_pr_number"}
+                )
+        }
+)
 public class PullRequest extends BaseEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column
+    @Column(name = "github_pr_number", nullable = false)
     private Integer githubPrNumber;
 
-    @Column
+    @Column(name = "github_id", nullable = false)
     private Long githubId;
     
     @Column
     private String commitSha;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "repo_id")
+    @JoinColumn(name = "repo_id", nullable = false)
     @OnDelete(action = OnDeleteAction.CASCADE)
     private Repo repo;
 
