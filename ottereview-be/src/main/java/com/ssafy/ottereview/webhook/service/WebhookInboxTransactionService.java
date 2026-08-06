@@ -3,6 +3,7 @@ package com.ssafy.ottereview.webhook.service;
 import com.ssafy.ottereview.webhook.dto.WebhookInboxStartResult;
 import com.ssafy.ottereview.webhook.entity.WebhookInbox;
 import com.ssafy.ottereview.webhook.repository.WebhookInboxRepository;
+import java.time.LocalDateTime;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -13,6 +14,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class WebhookInboxTransactionService {
 
     private final WebhookInboxRepository webhookInboxRepository;
+    private final WebhookRetryPolicy webhookRetryPolicy;
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public WebhookInboxStartResult begin(String deliveryId, String eventType, String payload) {
@@ -35,7 +37,11 @@ public class WebhookInboxTransactionService {
         String message = exception.getMessage() == null
                 ? exception.getClass().getSimpleName()
                 : exception.getMessage();
-        inbox.fail(message);
+        if (webhookRetryPolicy.attemptsExhausted(inbox)) {
+            inbox.exhaust(message);
+            return;
+        }
+        inbox.fail(message, webhookRetryPolicy.nextRetryAt(inbox, LocalDateTime.now()));
     }
 
     private WebhookInboxStartResult beginExisting(WebhookInbox inbox) {
@@ -55,7 +61,7 @@ public class WebhookInboxTransactionService {
     }
 
     private WebhookInbox getInbox(Long inboxId) {
-        return webhookInboxRepository.findById(inboxId)
+        return webhookInboxRepository.findByIdForUpdate(inboxId)
                 .orElseThrow(() -> new IllegalArgumentException(
                         "Webhook Inbox가 존재하지 않습니다.: " + inboxId));
     }

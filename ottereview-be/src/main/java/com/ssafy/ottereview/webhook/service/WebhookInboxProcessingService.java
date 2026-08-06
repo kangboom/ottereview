@@ -15,7 +15,7 @@ public class WebhookInboxProcessingService {
     private final WebhookEventDispatcher webhookEventDispatcher;
     @Transactional
     public void process(Long inboxId) {
-        WebhookInbox inbox = webhookInboxRepository.findById(inboxId)
+        WebhookInbox inbox = webhookInboxRepository.findByIdForUpdate(inboxId)
                 .orElseThrow(() -> new IllegalArgumentException(
                         "Webhook Inbox가 존재하지 않습니다.: " + inboxId));
 
