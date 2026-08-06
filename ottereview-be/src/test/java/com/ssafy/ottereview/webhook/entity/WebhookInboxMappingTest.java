@@ -24,6 +24,9 @@ class WebhookInboxMappingTest {
 
         assertThat(Arrays.stream(table.indexes())
                 .map(index -> Set.of(index.columnList().split(", "))))
-                .containsExactly(Set.of("status", "modified_at"));
+                .containsExactlyInAnyOrder(
+                        Set.of("status", "modified_at"),
+                        Set.of("status", "next_retry_at")
+                );
     }
 }

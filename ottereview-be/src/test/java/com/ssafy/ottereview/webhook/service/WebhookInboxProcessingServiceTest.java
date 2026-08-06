@@ -29,7 +29,7 @@ class WebhookInboxProcessingServiceTest {
     @Test
     void dispatchesPersistedInboxContentAndMarksItSucceeded() {
         WebhookInbox inbox = WebhookInbox.start("delivery-1", "pull_request", "{\"action\":\"opened\"}");
-        when(webhookInboxRepository.findById(1L)).thenReturn(Optional.of(inbox));
+        when(webhookInboxRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(inbox));
 
         processingService.process(1L);
 
