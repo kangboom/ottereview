@@ -81,7 +81,7 @@ public class PullRequestController {
             @RequestPart(value = "mediaFiles", required = false) MultipartFile[] mediaFiles) {
 
         pullRequestService.createPullRequestWithMediaFiles(userDetail, repoId, request, mediaFiles);
-        return ResponseEntity.ok()
+        return ResponseEntity.accepted()
                 .build();
     }
 

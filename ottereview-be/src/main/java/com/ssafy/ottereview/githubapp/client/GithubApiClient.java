@@ -19,6 +19,7 @@ import java.io.IOException;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
 import lombok.RequiredArgsConstructor;
@@ -130,6 +131,34 @@ public class GithubApiClient {
             throw new BusinessException(GithubAppErrorCode.GITHUB_APP_PULL_REQUEST_NOT_FOUND);
         }
     }
+
+    @Transactional(Transactional.TxType.NOT_SUPPORTED)
+    public Optional<GithubPrResponse> findOpenPullRequest(
+            Long installationId,
+            String repositoryName,
+            String head,
+            String base
+    ) {
+        return getPullRequests(installationId, repositoryName).stream()
+                .filter(pullRequest -> head.equals(pullRequest.getHead()))
+                .filter(pullRequest -> base.equals(pullRequest.getBase()))
+                .findFirst();
+    }
+
+    @Transactional(Transactional.TxType.NOT_SUPPORTED)
+    public GithubPrResponse getPullRequestSnapshot(
+            Long installationId,
+            String repositoryName,
+            Integer githubPrNumber
+    ) {
+        try {
+            GitHub github = githubAppUtil.getGitHub(installationId);
+            GHRepository repository = github.getRepository(repositoryName);
+            return GithubPrResponse.from(repository.getPullRequest(githubPrNumber));
+        } catch (IOException e) {
+            throw new BusinessException(GithubAppErrorCode.GITHUB_APP_PULL_REQUEST_NOT_FOUND);
+        }
+    }
     
     public PullRequestDetailResponse getPullRequestDetail(Long prId, String repositoryName) {
         
@@ -218,6 +247,7 @@ public class GithubApiClient {
     /**
      * Pull Request 생성
      */
+    @Transactional(Transactional.TxType.NOT_SUPPORTED)
     public GHPullRequest createPullRequest(Long installationId, String repositoryName, String title, String body, String head, String base) {
         try {
             GitHub github = githubAppUtil.getGitHub(installationId);

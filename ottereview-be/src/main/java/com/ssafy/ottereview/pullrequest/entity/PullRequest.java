@@ -1,11 +1,10 @@
 package com.ssafy.ottereview.pullrequest.entity;
 
 import com.ssafy.ottereview.common.entity.BaseEntity;
-import com.ssafy.ottereview.githubapp.dto.GithubPrResponse;
+import com.ssafy.ottereview.pullrequest.dto.info.PullRequestSyncData;
 import com.ssafy.ottereview.pullrequest.dto.response.PullRequestResponse;
 import com.ssafy.ottereview.repo.entity.Repo;
 import com.ssafy.ottereview.user.entity.User;
-import com.ssafy.ottereview.webhook.dto.PullRequestEventDto;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -17,9 +16,9 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 import java.net.URL;
 import java.time.LocalDateTime;
-import java.util.Objects;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
@@ -32,24 +31,36 @@ import org.hibernate.annotations.OnDeleteAction;
 @Getter
 @Builder
 @Entity
-@Table(name = "pull_request")
+@Table(
+        name = "pull_request",
+        uniqueConstraints = {
+                @UniqueConstraint(
+                        name = "uk_pull_request_github_id",
+                        columnNames = "github_id"
+                ),
+                @UniqueConstraint(
+                        name = "uk_pull_request_repo_number",
+                        columnNames = {"repo_id", "github_pr_number"}
+                )
+        }
+)
 public class PullRequest extends BaseEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column
+    @Column(name = "github_pr_number", nullable = false)
     private Integer githubPrNumber;
 
-    @Column
+    @Column(name = "github_id", nullable = false)
     private Long githubId;
     
     @Column
     private String commitSha;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "repo_id")
+    @JoinColumn(name = "repo_id", nullable = false)
     @OnDelete(action = OnDeleteAction.CASCADE)
     private Repo repo;
 
@@ -135,25 +146,40 @@ public class PullRequest extends BaseEntity {
         this.state = state;
     }
     
-    public void synchronizedByWebhook(PullRequestEventDto event){
-        this.commitSha = event.getPullRequest().getHead().getSha();
-        this.title = event.getPullRequest().getTitle();
-        this.body = event.getPullRequest().getBody();
-        this.state = PrState.fromGithubState(event.getPullRequest().getState(), event.getPullRequest().getMerged());
-        this.merged = event.getPullRequest().getMerged() == null || event.getPullRequest().getMerged();
-        this.githubUpdatedAt = event.getPullRequest().getUpdatedAt();
-        this.commitCnt = event.getPullRequest().getCommits();
-        this.changedFilesCnt = event.getPullRequest().getChangedFiles();
-        this.commentCnt = event.getPullRequest().getComments();
-        this.reviewCommentCnt = event.getPullRequest().getReviewComments();
-        this.htmlUrl = event.getPullRequest().getHtmlUrl();
-        this.patchUrl = event.getPullRequest().getPatchUrl();
-        this.issueUrl = event.getPullRequest().getIssueUrl();
-        this.diffUrl = event.getPullRequest().getDiffUrl();
-        if(event.getPullRequest().getMergeable() != null) {
-            this.mergeable = event.getPullRequest().getMergeable();
+    public static PullRequest create(PullRequestSyncData data, Repo repo, User author) {
+        PullRequest pullRequest = PullRequest.builder()
+                .githubId(data.githubId())
+                .githubPrNumber(data.githubPrNumber())
+                .repo(repo)
+                .author(author)
+                .approveCnt(0)
+                .mergeable(data.mergeable() == null || data.mergeable())
+                .build();
+        pullRequest.synchronize(data);
+        return pullRequest;
+    }
+
+    public void synchronize(PullRequestSyncData data) {
+        this.commitSha = data.commitSha();
+        this.title = data.title();
+        this.body = data.body();
+        this.state = PrState.fromGithubState(data.state(), data.merged());
+        this.merged = Boolean.TRUE.equals(data.merged());
+        this.base = data.base();
+        this.head = data.head();
+        this.githubCreatedAt = data.githubCreatedAt();
+        this.githubUpdatedAt = data.githubUpdatedAt();
+        this.commitCnt = data.commitCnt();
+        this.changedFilesCnt = data.changedFilesCnt();
+        this.commentCnt = data.commentCnt();
+        this.reviewCommentCnt = data.reviewCommentCnt();
+        this.htmlUrl = data.htmlUrl();
+        this.patchUrl = data.patchUrl();
+        this.issueUrl = data.issueUrl();
+        this.diffUrl = data.diffUrl();
+        if (data.mergeable() != null) {
+            this.mergeable = data.mergeable();
         }
-        this.base = event.getPullRequest().getBase().getRef();
     }
     
     public void addApproveCnt() {

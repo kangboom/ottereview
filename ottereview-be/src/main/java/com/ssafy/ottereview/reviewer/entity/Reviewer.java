@@ -16,6 +16,13 @@ import org.hibernate.annotations.OnDeleteAction;
 @Getter
 @Entity
 @Builder
+@Table(
+        name = "reviewer",
+        uniqueConstraints = @UniqueConstraint(
+                name = "uk_reviewer_pull_request_user",
+                columnNames = {"pull_request_id", "user_id"}
+        )
+)
 public class Reviewer extends BaseEntity {
 
     @Id

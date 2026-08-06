@@ -1,7 +1,6 @@
 package com.ssafy.ottereview.pullrequest.util;
 
 import com.ssafy.ottereview.branch.entity.Branch;
-import com.ssafy.ottereview.githubapp.dto.GithubPrResponse;
 import com.ssafy.ottereview.preparation.dto.PrUserInfo;
 import com.ssafy.ottereview.pullrequest.dto.info.PullRequestCommitInfo;
 import com.ssafy.ottereview.pullrequest.dto.info.PullRequestFileInfo;
@@ -53,34 +52,6 @@ public class PullRequestMapper {
                 .repo(RepoResponse.fromEntity(pr.getRepo()))
                 .files(pullRequestFileChanges)
                 .commits(pullRequestCommitInfos)
-                .build();
-    }
-    
-    public PullRequest githubPrResponseToEntity(GithubPrResponse githubPrResponse, User author, Repo repo) {
-        return PullRequest.builder()
-                .githubId(githubPrResponse.getGithubId())
-                .githubPrNumber(githubPrResponse.getGithubPrNumber())
-                .commitSha(githubPrResponse.getCommitSha())
-                .author(author)
-                .repo(repo)
-                .title(githubPrResponse.getTitle())
-                .body(githubPrResponse.getBody())
-                .state(PrState.fromGithubState(githubPrResponse.getState(), githubPrResponse.getMerged()))
-                .merged(githubPrResponse.getMerged())
-                .base(githubPrResponse.getBase())
-                .head(githubPrResponse.getHead())
-                .mergeable(githubPrResponse.getMergeable())
-                .githubCreatedAt(githubPrResponse.getGithubCreatedAt())
-                .githubUpdatedAt(githubPrResponse.getGithubUpdatedAt())
-                .commitCnt(githubPrResponse.getCommitCnt())
-                .changedFilesCnt(githubPrResponse.getChangedFilesCnt())
-                .commentCnt(githubPrResponse.getCommentCnt())
-                .reviewCommentCnt(githubPrResponse.getReviewCommentCnt())
-                .htmlUrl(githubPrResponse.getHtmlUrl())
-                .patchUrl(githubPrResponse.getPatchUrl())
-                .issueUrl(githubPrResponse.getIssueUrl())
-                .diffUrl(githubPrResponse.getDiffUrl())
-                .approveCnt(0) // 초기값 - 나중에 리뷰 분석으로 계산
                 .build();
     }
     
