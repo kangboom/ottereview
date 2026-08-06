@@ -19,3 +19,9 @@ global uniqueness of `github_pr_number` with these domain invariants:
 - GitHub node ID uniquely identifies a pull request globally.
 - Pull request number is unique within a repository.
 - A user can be registered as a reviewer only once per pull request.
+
+`V002__create_webhook_inbox.sql` records GitHub deliveries before processing:
+
+- `delivery_id` is unique, so the same delivery is not applied twice.
+- processing status and retry count make failures observable and retryable.
+- the status/modified-time index supports later reconciliation of stale rows.
