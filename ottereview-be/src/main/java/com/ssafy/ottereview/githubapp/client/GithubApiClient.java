@@ -130,6 +130,20 @@ public class GithubApiClient {
             throw new BusinessException(GithubAppErrorCode.GITHUB_APP_PULL_REQUEST_NOT_FOUND);
         }
     }
+
+    public GithubPrResponse getPullRequestSnapshot(
+            Long installationId,
+            String repositoryName,
+            Integer githubPrNumber
+    ) {
+        try {
+            GitHub github = githubAppUtil.getGitHub(installationId);
+            GHRepository repository = github.getRepository(repositoryName);
+            return GithubPrResponse.from(repository.getPullRequest(githubPrNumber));
+        } catch (IOException e) {
+            throw new BusinessException(GithubAppErrorCode.GITHUB_APP_PULL_REQUEST_NOT_FOUND);
+        }
+    }
     
     public PullRequestDetailResponse getPullRequestDetail(Long prId, String repositoryName) {
         

@@ -61,7 +61,7 @@ public class GithubPrResponse {
                     .merged(ghPullRequest.isMerged())
                     .base(ghPullRequest.getBase().getRef())
                     .head(ghPullRequest.getHead().getRef())
-                    .mergeable(ghPullRequest.getMergeable() == null || ghPullRequest.getMergeable())
+                    .mergeable(ghPullRequest.getMergeable())
                     .githubCreatedAt(convertToLocalDateTime(ghPullRequest.getCreatedAt()))
                     .githubUpdatedAt(convertToLocalDateTime(ghPullRequest.getUpdatedAt()))
                     .commitCnt(ghPullRequest.getCommits())
