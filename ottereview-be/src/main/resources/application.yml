@@ -110,6 +110,14 @@ webhook:
       max-attempts: ${WEBHOOK_INBOX_MAX_ATTEMPTS:3}
 
 pull-request:
+  creation:
+    initial-delay-ms: ${PR_CREATION_INITIAL_DELAY_MS:5000}
+    fixed-delay-ms: ${PR_CREATION_FIXED_DELAY_MS:5000}
+    processing-timeout: ${PR_CREATION_PROCESSING_TIMEOUT:10m}
+    base-retry-delay: ${PR_CREATION_BASE_RETRY_DELAY:1m}
+    max-retry-delay: ${PR_CREATION_MAX_RETRY_DELAY:15m}
+    batch-size: ${PR_CREATION_BATCH_SIZE:20}
+    max-attempts: ${PR_CREATION_MAX_ATTEMPTS:3}
   reconciliation:
     initial-delay-ms: ${PR_RECONCILIATION_INITIAL_DELAY_MS:60000}
     fixed-delay-ms: ${PR_RECONCILIATION_FIXED_DELAY_MS:900000}

@@ -23,6 +23,7 @@ import com.ssafy.ottereview.pullrequest.dto.request.PullRequestCreateRequest;
 import com.ssafy.ottereview.pullrequest.dto.response.PullRequestDetailResponse;
 import com.ssafy.ottereview.pullrequest.dto.response.PullRequestResponse;
 import com.ssafy.ottereview.pullrequest.dto.response.PullRequestValidationResponse;
+import com.ssafy.ottereview.pullrequest.creation.service.PullRequestCreationCommandService;
 import com.ssafy.ottereview.pullrequest.entity.PrState;
 import com.ssafy.ottereview.pullrequest.entity.PullRequest;
 import com.ssafy.ottereview.pullrequest.exception.PullRequestErrorCode;
@@ -70,6 +71,7 @@ public class PullRequestServiceImpl implements PullRequestService {
     private final DescriptionRepository descriptionRepository;
     private final PullRequestMapper pullRequestMapper;
     private final PullRequestSyncService pullRequestSyncService;
+    private final PullRequestCreationCommandService pullRequestCreationCommandService;
     private final PreparationRedisRepository preparationRedisRepository;
     private final ReviewRepository reviewRepository;
     private final ReviewCommentRepository reviewCommentRepository;
@@ -245,51 +247,36 @@ public class PullRequestServiceImpl implements PullRequestService {
     @Override
     public void createPullRequestWithMediaFiles(CustomUserDetail customUserDetail, Long repoId,
             PullRequestCreateRequest request, MultipartFile[] mediaFiles) {
+        Repo repo = userAccountService.validateUserPermission(customUserDetail.getUser()
+                .getId(), repoId);
+        PreparationResult prepareInfo = preparationRedisRepository.getPrepareInfo(
+                repoId,
+                request.getSource(),
+                request.getTarget()
+        );
 
-        GithubPrResponse prResponse = null;
-
-        try {
-            Repo repo = userAccountService.validateUserPermission(customUserDetail.getUser()
-                    .getId(), repoId);
-
-            // redis 캐시에서 PR 생성 가능 여부 확인
-            PreparationResult prepareInfo = preparationRedisRepository.getPrepareInfo(repoId, request.getSource(), request.getTarget());
-
-            if (prepareInfo == null || !prepareInfo.getIsPossible()) {
-                throw new BusinessException(PullRequestErrorCode.PR_VALIDATION_FAILED);
-            }
-
-            // PR 생성 검증
-            validatePullRequestCreation(prepareInfo, repo);
-
-            // GitHub에 PR 생성 (DB 저장은 Webhook에서 처리)
-            prResponse = GithubPrResponse.from(githubApiClient.createPullRequest(repo.getAccount()
-                    .getInstallationId(), repo.getFullName(), prepareInfo.getTitle(), prepareInfo.getBody(), request.getSource(), request.getTarget())
-            );
-
-            // 파일 정보를 Redis에 저장 (Webhook에서 사용하기 위해)
-            if (mediaFiles != null && mediaFiles.length > 0) {
-                String filesCacheKey = String.format("pr_files:%d:%s:%s", repoId, request.getSource(), request.getTarget());
-                preparationRedisRepository.saveMediaFiles(filesCacheKey, mediaFiles);
-                log.debug("미디어 파일 Redis 저장 완료 - Key: {}, 파일 수: {}", filesCacheKey, mediaFiles.length);
-            }
-            
-        } catch (Exception e) {
-            log.error("Pull Request 생성 중 오류 발생: {}", e.getMessage(), e);
-            // 오류 발생 시 Github PR 삭제
-            try {
-                if (prResponse != null) {
-                    Repo repo = repoRepository.findById(repoId)
-                            .orElseThrow(() -> new BusinessException(RepoErrorCode.REPO_NOT_FOUND));
-
-                    githubApiClient.closePullRequest(repo.getAccount()
-                            .getInstallationId(), repo.getFullName(), prResponse.getGithubPrNumber());
-                }
-            } catch (Exception deleteEx) {
-                log.error("Pull Request 삭제 중 오류 발생: {}", deleteEx.getMessage(), deleteEx);
-                throw new BusinessException(PullRequestErrorCode.PR_CREATE_FAILED, "PR 생성 중 오류가 발생하였고, PR 삭제에도 실패하였습니다.");
-            }
+        if (prepareInfo == null || !Boolean.TRUE.equals(prepareInfo.getIsPossible())) {
+            throw new BusinessException(PullRequestErrorCode.PR_VALIDATION_FAILED);
         }
+
+        validatePullRequestCreation(prepareInfo, repo);
+
+        // GitHub 생성 전에 파일을 보관한다. 이후 DB 요청 저장이 실패해도 Redis TTL이 고아 데이터를 정리한다.
+        if (mediaFiles != null && mediaFiles.length > 0) {
+            String filesCacheKey = String.format(
+                    "pr_files:%d:%s:%s",
+                    repoId,
+                    request.getSource(),
+                    request.getTarget()
+            );
+            preparationRedisRepository.saveMediaFiles(filesCacheKey, mediaFiles);
+            log.debug("미디어 파일 Redis 저장 완료 - Key: {}, 파일 수: {}", filesCacheKey, mediaFiles.length);
+        }
+
+        User author = userRepository.findById(customUserDetail.getUser().getId())
+                .orElseThrow(() -> new BusinessException(UserErrorCode.USER_NOT_FOUND));
+        Long taskId = pullRequestCreationCommandService.request(repo, author, prepareInfo);
+        log.info("PR 생성 요청이 Outbox에 등록되었습니다. taskId: {}, repoId: {}", taskId, repoId);
     }
 
     @Override
