@@ -8,6 +8,7 @@ import com.ssafy.ottereview.githubapp.util.GithubUpdateFacade;
 import java.net.URI;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Controller;
@@ -21,6 +22,9 @@ import org.springframework.web.bind.annotation.RequestParam;
 public class GithubCallbackController {
 
     private final GithubInstallationFacade githubInstallationFacade;
+
+    @Value("${app.front.url}")
+    private String frontUrl;
 
     @GetMapping("/")
     public String index() {
@@ -48,9 +52,7 @@ public class GithubCallbackController {
                 githubInstallationFacade.processInstallationWithOAuth(installationId, code);
             }
 
-            //🎯 리디렉션할 프론트엔드 URI
-           log.debug("리다이렉트 URL 생성");
-          URI redirectUri = URI.create("https://i13c108.p.ssafy.io/install-complete"); // 또는 환경 변수로 관리
+            URI redirectUri = URI.create(frontUrl + "/install-complete");
 
             return ResponseEntity.status(HttpStatus.FOUND)
                     .location(redirectUri)
