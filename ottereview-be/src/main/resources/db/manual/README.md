@@ -30,3 +30,9 @@ global uniqueness of `github_pr_number` with these domain invariants:
 
 - `next_retry_at` schedules failed deliveries with backoff instead of a tight retry loop.
 - the status/retry-time index supports bounded polling by the recovery worker.
+
+`V004__create_pull_request_creation_saga.sql` makes outbound GitHub PR creation recoverable:
+
+- the creation task stores incomplete workflow state separately from the final PR row.
+- the outbox row is committed with the task and polled by a retryable worker.
+- GitHub identifiers are recorded before the final PR Upsert so a retry can resume safely.
