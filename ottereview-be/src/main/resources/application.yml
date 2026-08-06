@@ -3,6 +3,12 @@ spring:
   application:
     name: ottereview
 
+  task:
+    scheduling:
+      pool:
+        size: 2
+      thread-name-prefix: scheduling-
+
   jpa:
     open-in-view: false
     properties:
@@ -102,6 +108,11 @@ webhook:
       max-retry-delay: ${WEBHOOK_INBOX_MAX_RETRY_DELAY:15m}
       batch-size: ${WEBHOOK_INBOX_RECOVERY_BATCH_SIZE:100}
       max-attempts: ${WEBHOOK_INBOX_MAX_ATTEMPTS:3}
+
+pull-request:
+  reconciliation:
+    initial-delay-ms: ${PR_RECONCILIATION_INITIAL_DELAY_MS:60000}
+    fixed-delay-ms: ${PR_RECONCILIATION_FIXED_DELAY_MS:900000}
 ---
 # application-local.yml - 로컬 개발 환경 (IntelliJ 실행)
 spring:
