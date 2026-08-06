@@ -24,10 +24,16 @@ import lombok.NoArgsConstructor;
                 name = "uk_webhook_inbox_delivery_id",
                 columnNames = "delivery_id"
         ),
-        indexes = @Index(
-                name = "idx_webhook_inbox_status_modified_at",
-                columnList = "status, modified_at"
-        )
+        indexes = {
+                @Index(
+                        name = "idx_webhook_inbox_status_modified_at",
+                        columnList = "status, modified_at"
+                ),
+                @Index(
+                        name = "idx_webhook_inbox_status_next_retry_at",
+                        columnList = "status, next_retry_at"
+                )
+        }
 )
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
@@ -62,6 +68,9 @@ public class WebhookInbox extends BaseEntity {
     @Column(name = "processed_at")
     private LocalDateTime processedAt;
 
+    @Column(name = "next_retry_at")
+    private LocalDateTime nextRetryAt;
+
     public static WebhookInbox start(String deliveryId, String eventType, String payload) {
         return new WebhookInbox(
                 null,
@@ -71,6 +80,7 @@ public class WebhookInbox extends BaseEntity {
                 WebhookInboxStatus.PROCESSING,
                 1,
                 null,
+                null,
                 null
         );
     }
@@ -79,23 +89,44 @@ public class WebhookInbox extends BaseEntity {
         return status == WebhookInboxStatus.FAILED;
     }
 
+    public boolean isProcessing() {
+        return status == WebhookInboxStatus.PROCESSING;
+    }
+
+    public boolean canRetry(LocalDateTime now, int maxAttempts) {
+        return isFailed()
+                && attemptCount < maxAttempts
+                && nextRetryAt != null
+                && !nextRetryAt.isAfter(now);
+    }
+
     public void retry() {
         status = WebhookInboxStatus.PROCESSING;
         attemptCount++;
         lastError = null;
         processedAt = null;
+        nextRetryAt = null;
     }
 
     public void succeed(LocalDateTime processedAt) {
         status = WebhookInboxStatus.SUCCEEDED;
         lastError = null;
         this.processedAt = processedAt;
+        nextRetryAt = null;
     }
 
-    public void fail(String errorMessage) {
+    public void fail(String errorMessage, LocalDateTime nextRetryAt) {
         status = WebhookInboxStatus.FAILED;
         lastError = truncate(errorMessage);
         processedAt = null;
+        this.nextRetryAt = nextRetryAt;
+    }
+
+    public void exhaust(String errorMessage) {
+        status = WebhookInboxStatus.EXHAUSTED;
+        lastError = truncate(errorMessage);
+        processedAt = null;
+        nextRetryAt = null;
     }
 
     private String truncate(String value) {

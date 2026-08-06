@@ -92,6 +92,16 @@ logging:
 ai:
   server:
     url: ${AI_SERVER_BASE_URL:http://localhost:8000}
+
+webhook:
+  inbox:
+    recovery:
+      fixed-delay-ms: ${WEBHOOK_INBOX_RECOVERY_DELAY_MS:30000}
+      processing-timeout: ${WEBHOOK_INBOX_PROCESSING_TIMEOUT:10m}
+      base-retry-delay: ${WEBHOOK_INBOX_BASE_RETRY_DELAY:1m}
+      max-retry-delay: ${WEBHOOK_INBOX_MAX_RETRY_DELAY:15m}
+      batch-size: ${WEBHOOK_INBOX_RECOVERY_BATCH_SIZE:100}
+      max-attempts: ${WEBHOOK_INBOX_MAX_ATTEMPTS:3}
 ---
 # application-local.yml - 로컬 개발 환경 (IntelliJ 실행)
 spring:

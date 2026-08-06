@@ -25,3 +25,8 @@ global uniqueness of `github_pr_number` with these domain invariants:
 - `delivery_id` is unique, so the same delivery is not applied twice.
 - processing status and retry count make failures observable and retryable.
 - the status/modified-time index supports later reconciliation of stale rows.
+
+`V003__add_webhook_inbox_recovery_fields.sql` enables automatic recovery:
+
+- `next_retry_at` schedules failed deliveries with backoff instead of a tight retry loop.
+- the status/retry-time index supports bounded polling by the recovery worker.
