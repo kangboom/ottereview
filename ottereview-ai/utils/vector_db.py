@@ -37,8 +37,7 @@ class PineconeVectorDB:
         # OpenAI 임베딩 초기화
         self.embeddings = OpenAIEmbeddings(
             model="text-embedding-3-small",
-            openai_api_key=os.getenv("OPENAI_API_KEY"),
-            openai_api_base=os.getenv("OPENAI_API_BASE", "https://gms.ssafy.io/gmsapi/api.openai.com/v1")
+            openai_api_key=os.getenv("OPENAI_API_KEY")
         )
         
         # 인덱스 설정

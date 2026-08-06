@@ -11,8 +11,10 @@ import com.ssafy.ottereview.ai.dto.response.AiPriorityResponse;
 import com.ssafy.ottereview.ai.dto.response.AiReviewerResponse;
 import com.ssafy.ottereview.ai.dto.response.AiSummaryResponse;
 import com.ssafy.ottereview.ai.dto.response.AiTitleResponse;
+import com.ssafy.ottereview.ai.filter.AiThreadTraceFilter;
 import com.ssafy.ottereview.common.annotation.WebFluxController;
 import com.ssafy.ottereview.user.entity.CustomUserDetail;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -70,8 +72,22 @@ public class AiController {
     }
     
     @PostMapping("/all")
-    public Mono<ResponseEntity<AiResult>> getAllAi(@AuthenticationPrincipal CustomUserDetail customUserDetail, @RequestBody AiRequest request) {
-        return aiClient.analyzeAll(customUserDetail, request)
-                .map(ResponseEntity::ok);
+    public Mono<ResponseEntity<AiResult>> getAllAi(
+            @AuthenticationPrincipal CustomUserDetail customUserDetail,
+            @RequestBody AiRequest request,
+            HttpServletRequest servletRequest) {
+        String traceId = AiThreadTraceFilter.getTraceId(servletRequest);
+        logThread(traceId, "controller-entry");
+
+        return aiClient.analyzeAll(customUserDetail, request, traceId)
+                .map(result -> {
+                    logThread(traceId, "controller-response-entity");
+                    return ResponseEntity.ok(result);
+                });
+    }
+
+    private void logThread(String traceId, String stage) {
+        log.info("[AI_THREAD_TRACE] traceId={} stage={} thread={}",
+                traceId, stage, Thread.currentThread().getName());
     }
 }
