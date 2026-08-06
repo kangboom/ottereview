@@ -11,8 +11,7 @@ logger = logging.getLogger(__name__)
 class WhisperService:
     def __init__(self):
         self.client = OpenAI(
-            api_key=os.getenv("OPENAI_API_KEY"),
-            base_url="https://gms.ssafy.io/gmsapi/api.openai.com/v1"
+            api_key=os.getenv("OPENAI_API_KEY")
         )
         if not os.getenv("OPENAI_API_KEY"):
             raise ValueError("OPENAI_API_KEY environment variable is required")

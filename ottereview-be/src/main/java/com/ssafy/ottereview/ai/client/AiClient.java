@@ -135,34 +135,49 @@ public class AiClient {
     /**
      * 모든 AI 분석을 병렬로 실행
      */
-    public Mono<AiResult> analyzeAll(CustomUserDetail customUserDetail, AiRequest request) {
-        log.info("AI 전체 분석 시작");
+    public Mono<AiResult> analyzeAll(CustomUserDetail customUserDetail, AiRequest request,
+            String traceId) {
+        logThread(traceId, "analyzeAll-assembly");
         
-        // 1. 캐시 조회를 Mono로 감싸서 reactive chain 유지
-        return Mono.fromCallable(() -> aiRedisRepository.getAiInfo(request))
+        // 1. Blocking Redis 조회를 boundedElastic에 격리
+        return Mono.fromCallable(() -> {
+                    logThread(traceId, "redis-get-start");
+                    AiResult cachedResult = aiRedisRepository.getAiInfo(request);
+                    logThread(traceId, "redis-get-complete");
+                    return cachedResult;
+                })
+                .subscribeOn(Schedulers.boundedElastic())
                 .doOnNext(cachedResult -> {
                     if (cachedResult != null) {
+                        logThread(traceId, "cache-hit");
                         log.info("캐시된 AI 정보 조회 성공 - 캐시 히트");
                     }
                 })
                 .filter(Objects::nonNull)  // null이 아닌 경우만 통과
-                .switchIfEmpty(
-                        // 2. 캐시가 없는 경우에만 실제 분석 수행
-                        performFullAnalysis(customUserDetail, request)
-                )
-                .doOnSuccess(result -> log.debug("AI 전체 분석 완료"))
-                .doOnError(error -> log.error("AI 전체 분석 실패", error));
+                // 2. 캐시 미스가 확인된 시점에만 분석 Mono 생성
+                .switchIfEmpty(Mono.defer(() -> {
+                    logThread(traceId, "cache-miss");
+                    return performFullAnalysis(customUserDetail, request, traceId);
+                }))
+                .doOnSubscribe(subscription -> logThread(traceId, "analyzeAll-subscribed"))
+                .doOnSuccess(result -> logThread(traceId, "analyzeAll-complete"))
+                .doOnError(error -> {
+                    logThread(traceId, "analyzeAll-error");
+                    log.error("AI 전체 분석 실패", error);
+                });
     }
     
-    private Mono<AiResult> performFullAnalysis(CustomUserDetail customUserDetail, AiRequest request) {
+    private Mono<AiResult> performFullAnalysis(CustomUserDetail customUserDetail, AiRequest request,
+            String traceId) {
+        logThread(traceId, "performFullAnalysis-assembly");
         log.info("캐시 미스 - 새로운 AI 분석 시작");
         
         LocalDateTime startTime = LocalDateTime.now();
         
         // 3. 권한 검증을 비동기로 수행
         return validateUserPermissionAsync(customUserDetail.getUser()
-                .getId(), request.getRepoId())
-                .then(executeParallelAnalysis(request, startTime))
+                .getId(), request.getRepoId(), traceId)
+                .then(Mono.defer(() -> executeParallelAnalysis(request, startTime, traceId)))
                 .timeout(Duration.ofMinutes(5))  // 전체 타임아웃 5분
                 .doOnSuccess(result -> {
                     Duration duration = Duration.between(startTime, LocalDateTime.now());
@@ -175,14 +190,16 @@ public class AiClient {
                 .onErrorResume(error -> handlePartialFailure(startTime, error));
     }
     
-    private Mono<AiResult> executeParallelAnalysis(AiRequest request, LocalDateTime startTime) {
+    private Mono<AiResult> executeParallelAnalysis(AiRequest request, LocalDateTime startTime,
+            String traceId) {
+        logThread(traceId, "parallel-analysis-assembly");
         log.info("병렬 AI API 호출 시작");
         
         // 4. 각 API 호출에 개별 타임아웃과 fallback 추가
         Mono<AiTitleResponse> titleMono = recommendTitle(request)
                 .timeout(Duration.ofMinutes(2))
-                .doOnSubscribe(sub -> log.debug("Title 분석 시작"))
-                .doOnSuccess(result -> log.debug("Title 분석 완료"))
+                .doOnSubscribe(sub -> logThread(traceId, "webclient-title-subscribed"))
+                .doOnSuccess(result -> logThread(traceId, "webclient-title-response"))
                 .onErrorResume(error -> {
                     log.warn("Title 분석 실패, 기본값 사용", error);
                     return Mono.just(createDefaultTitleResponse());
@@ -190,8 +207,8 @@ public class AiClient {
         
         Mono<AiReviewerResponse> reviewersMono = recommendReviewers(request)
                 .timeout(Duration.ofMinutes(2))
-                .doOnSubscribe(sub -> log.debug("Reviewers 분석 시작"))
-                .doOnSuccess(result -> log.debug("Reviewers 분석 완료"))
+                .doOnSubscribe(sub -> logThread(traceId, "webclient-reviewers-subscribed"))
+                .doOnSuccess(result -> logThread(traceId, "webclient-reviewers-response"))
                 .onErrorResume(error -> {
                     log.warn("Reviewers 분석 실패, 기본값 사용", error);
                     return Mono.just(createDefaultReviewersResponse());
@@ -199,8 +216,8 @@ public class AiClient {
         
         Mono<AiPriorityResponse> priorityMono = recommendPriority(request)
                 .timeout(Duration.ofMinutes(2))
-                .doOnSubscribe(sub -> log.debug("Priority 분석 시작"))
-                .doOnSuccess(result -> log.debug("Priority 분석 완료"))
+                .doOnSubscribe(sub -> logThread(traceId, "webclient-priority-subscribed"))
+                .doOnSuccess(result -> logThread(traceId, "webclient-priority-response"))
                 .onErrorResume(error -> {
                     log.warn("Priority 분석 실패, 기본값 사용", error);
                     return Mono.just(createDefaultPriorityResponse());
@@ -208,8 +225,8 @@ public class AiClient {
         
         // 5. 모든 결과를 조합하고 캐시 저장
         return Mono.zip(titleMono, reviewersMono, priorityMono)
-                .doOnSubscribe(sub -> log.debug("모든 AI API 호출 시작 - Mono.zip 진입"))
-                .doOnNext(results -> log.debug("모든 AI API 호출 완료 - 결과 조합 중"))
+                .doOnSubscribe(sub -> logThread(traceId, "mono-zip-subscribed"))
+                .doOnNext(results -> logThread(traceId, "mono-zip-complete"))
                 .map(results -> {
                     AiResult analysisResult = AiResult.builder()
                             .title(results.getT1())
@@ -227,8 +244,8 @@ public class AiClient {
                     try {
                         if (isValidForCaching(result)) {
                             log.debug("의미있는 AI 분석 결과 - 캐시에 저장합니다");
-                            return saveToCache(request, result)
-                                    .doOnSuccess(v -> log.debug("캐시 저장 성공"))
+                            return saveToCache(request, result, traceId)
+                                    .doOnSuccess(v -> logThread(traceId, "cache-save-chain-complete"))
                                     .thenReturn(result)
                                     .onErrorResume(cacheError -> {
                                         log.warn("캐시 저장 실패, 결과는 정상 반환", cacheError);
@@ -265,9 +282,11 @@ public class AiClient {
                 });
     }
     
-    private Mono<Void> validateUserPermissionAsync(Long userId, Long repoId) {
+    private Mono<Void> validateUserPermissionAsync(Long userId, Long repoId, String traceId) {
         return Mono.fromCallable(() -> {
+                    logThread(traceId, "jpa-permission-start");
                     userAccountService.validateUserPermission(userId, repoId);
+                    logThread(traceId, "jpa-permission-complete");
                     return null;
                 })
                 .subscribeOn(Schedulers.boundedElastic())
@@ -275,10 +294,12 @@ public class AiClient {
     }
     
     // 8. 캐시 저장을 비동기로 수행
-    private Mono<Void> saveToCache(AiRequest request, AiResult result) {
+    private Mono<Void> saveToCache(AiRequest request, AiResult result, String traceId) {
         return Mono.fromCallable(() -> {
+                    logThread(traceId, "redis-set-start");
                     try {
                         aiRedisRepository.saveAiInfo(request, result);
+                        logThread(traceId, "redis-set-complete");
                         log.debug("AI 분석 결과 캐시 저장 완료");
                         return null;
                     } catch (Exception e) {
@@ -289,6 +310,11 @@ public class AiClient {
                 .subscribeOn(Schedulers.boundedElastic())  // I/O 스레드에서 실행
                 .then()
                 .doOnError(error -> log.error("캐시 저장 비동기 처리 중 오류", error));
+    }
+
+    private void logThread(String traceId, String stage) {
+        log.info("[AI_THREAD_TRACE] traceId={} stage={} thread={}",
+                traceId, stage, Thread.currentThread().getName());
     }
     
     // 9. 기본값 생성 메소드들 (각 API 실패 시 사용)
@@ -347,7 +373,7 @@ public class AiClient {
             return false;
         }
         
-        // Reviewers 검증: 빈 리스트가 아닌지 확인
+        // Reviewers 검증: 추천할 리뷰어가 없는 빈 목록은 정상 결과이므로 캐시한다.
         if (isDefaultReviewersResponse(result.getReviewers())) {
             log.debug("Reviewers가 기본값입니다 - 캐시 저장 제외");
             return false;
@@ -374,7 +400,7 @@ public class AiClient {
      * Reviewers 응답이 기본값인지 검증
      */
     private boolean isDefaultReviewersResponse(AiReviewerResponse reviewers) {
-        return reviewers.getResult() == null || reviewers.getResult().isEmpty();
+        return reviewers.getResult() == null;
     }
     
     /**

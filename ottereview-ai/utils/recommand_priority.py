@@ -19,9 +19,7 @@ openai_api_key = os.getenv("OPENAI_API_KEY")
 if not openai_api_key:
     raise ValueError("OPENAI_API_KEY가 환경변수에 설정되지 않았습니다. .env 파일을 확인해주세요.")
 
-# 중요! langchain의 BASE_URL을 GMS로 설정합니다.
-os.environ["OPENAI_API_BASE"] = "https://gms.ssafy.io/gmsapi/api.openai.com/v1"
-
+# OpenAI 기본 엔드포인트(https://api.openai.com/v1)를 사용합니다.
 model = init_chat_model("gpt-4o-mini", model_provider="openai")
 
 
