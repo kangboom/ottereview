@@ -6,7 +6,7 @@ public enum PrState {
     MERGED;
 
     public static PrState fromGithubState(String state, Boolean merged) {
-        if ("closed".equals(state)) {
+        if ("closed".equalsIgnoreCase(state)) {
             return (merged != null && merged) ? MERGED : CLOSED;
         }
         return OPEN;

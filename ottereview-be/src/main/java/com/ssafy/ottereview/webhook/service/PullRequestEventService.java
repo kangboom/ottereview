@@ -14,11 +14,13 @@ import com.ssafy.ottereview.priority.entity.Priority;
 import com.ssafy.ottereview.priority.entity.PriorityFile;
 import com.ssafy.ottereview.priority.repository.PriorityFileRepository;
 import com.ssafy.ottereview.priority.repository.PriorityRepository;
+import com.ssafy.ottereview.pullrequest.dto.info.PullRequestSyncData;
+import com.ssafy.ottereview.pullrequest.dto.info.PullRequestSyncResult;
 import com.ssafy.ottereview.pullrequest.entity.PrState;
 import com.ssafy.ottereview.pullrequest.entity.PullRequest;
 import com.ssafy.ottereview.pullrequest.exception.PullRequestErrorCode;
 import com.ssafy.ottereview.pullrequest.repository.PullRequestRepository;
-import com.ssafy.ottereview.pullrequest.service.PullRequestService;
+import com.ssafy.ottereview.pullrequest.service.PullRequestSyncService;
 import com.ssafy.ottereview.repo.entity.Repo;
 import com.ssafy.ottereview.repo.repository.RepoRepository;
 import com.ssafy.ottereview.reviewer.dto.ReviewerResponse;
@@ -31,8 +33,6 @@ import com.ssafy.ottereview.user.exception.UserErrorCode;
 import com.ssafy.ottereview.user.repository.UserRepository;
 import com.ssafy.ottereview.webhook.controller.EventSendController;
 import com.ssafy.ottereview.webhook.dto.PullRequestEventDto;
-import com.ssafy.ottereview.webhook.dto.PullRequestEventDto.RepositoryInfo;
-import com.ssafy.ottereview.webhook.dto.PullRequestWebhookInfo;
 import com.ssafy.ottereview.webhook.dto.UserWebhookInfo;
 import com.ssafy.ottereview.webhook.exception.WebhookErrorCode;
 import jakarta.transaction.Transactional;
@@ -59,7 +59,7 @@ public class PullRequestEventService {
     private final PriorityRepository priorityRepository;
     private final PriorityFileRepository priorityFileRepository;
     private final DescriptionService descriptionService;
-    private final PullRequestService pullRequestService;
+    private final PullRequestSyncService pullRequestSyncService;
     private final EventSendController eventSendController;
     
     public void processPullRequestEvent(String payload) {
@@ -131,12 +131,7 @@ public class PullRequestEventService {
     // mergeable 값을 못가져옴..
     private void handlePullRequestSynchronize(PullRequestEventDto event) {
         log.debug("[웹훅 PR 동기화 로직 실행]");
-        Long githubId = event.getPullRequest()
-                .getId();
-        
-        PullRequest pullRequest = pullRequestRepository.findByGithubId(githubId)
-                .orElseThrow(() -> new IllegalArgumentException(
-                        "깃허브 PR ID에 해당하는 PR이 존재하지 않습니다.: " + githubId));
+        PullRequest pullRequest = synchronizePullRequest(event).pullRequest();
         
         List<ReviewerResponse> reviewerList = reviewerService.getReviewerByPullRequest(pullRequest.getId());
         // reviewer들의 state를 none으로 바꿔야한다.
@@ -152,22 +147,24 @@ public class PullRequestEventService {
         // 만약 Synchronize 가 들어오면 모든 Reviewr들의 state를 None으로 초기화한다.
         reviewerRepository.saveAll(reviewers);
         
-        pullRequest.synchronizedByWebhook(event);
         log.debug("sync 온다~~~~~₩!!!!!!");
         eventSendController.push(event.getSender()
                 .getId(), "synchronize", "synchronize");
     }
     
     private void handlePullRequestOpened(PullRequestEventDto event) {
-        
-        Long githubId = event.getPullRequest()
-                .getId();
-        
-        pullRequestRepository.findByGithubId(githubId)
-                .ifPresentOrElse(
-                        existingPullRequest -> log.debug("이미 존재하는 PR 입니다."), // 이미 존재하는 PR이므로 아무 작업도 하지 않음,
-                        () -> registerPullRequest(event)
-                );
+        PullRequestSyncResult result = synchronizePullRequest(event);
+
+        if (!result.created()) {
+            log.debug("이미 존재하는 PR을 최신 웹훅 정보로 갱신했습니다. githubId: {}",
+                    result.pullRequest().getGithubId());
+            return;
+        }
+
+        PullRequest pullRequest = result.pullRequest();
+        saveRelatedDataFromRedis(pullRequest, pullRequest.getRepo().getId(),
+                pullRequest.getHead(), pullRequest.getBase());
+        cleanupRedisData(pullRequest.getRepo().getId(), pullRequest.getHead(), pullRequest.getBase());
     }
     
     private void handlePullRequestClosed(PullRequestEventDto event) {
@@ -185,57 +182,17 @@ public class PullRequestEventService {
         log.debug("Pull Request with GitHub PR number {} has been closed.", githubId);
     }
     
-    private void registerPullRequest(PullRequestEventDto event) {
-        log.info("PR 등록로직");
-        PullRequestWebhookInfo pullRequest = event.getPullRequest();
-        RepositoryInfo repo = event.getRepository();
-        
-        Repo targetRepo = repoRepository.findByRepoId(repo.getId())
+    private PullRequestSyncResult synchronizePullRequest(PullRequestEventDto event) {
+        Repo targetRepo = repoRepository.findByRepoId(event.getRepository().getId())
                 .orElseThrow(() -> new IllegalArgumentException(
-                        "해당 repository ID에 해당하는 Repo가 존재하지 않습니다.: " + repo.getId()));
-        
-        User author = userRepository.findByGithubId(pullRequest.getUser()
+                        "해당 repository ID에 해당하는 Repo가 존재하지 않습니다.: "
+                                + event.getRepository().getId()));
+
+        User author = userRepository.findByGithubId(event.getPullRequest().getUser()
                         .getId())
-                .orElseGet(() -> registerUser(pullRequest.getUser()));
-        
-        PullRequest newPullRequest = PullRequest.builder()
-                .githubId(pullRequest.getId())
-                .githubPrNumber(event.getNumber())
-                .title(pullRequest.getTitle())
-                .body(pullRequest.getBody())
-                .state(PrState.fromGithubState(pullRequest.getState(), pullRequest.getMerged()))
-                .author(author)
-                .merged(pullRequest.getMerged() != null && pullRequest.getMerged())
-                .base(pullRequest.getBase()
-                        .getRef())
-                .head(pullRequest.getHead()
-                        .getRef())
-                .mergeable(pullRequest.getMergeable() == null || pullRequest.getMergeable())
-                .githubCreatedAt(pullRequest.getCreatedAt())
-                .githubUpdatedAt(pullRequest.getUpdatedAt())
-                .commitCnt(pullRequest.getCommits())
-                .changedFilesCnt(pullRequest.getChangedFiles())
-                .commentCnt(pullRequest.getComments())
-                .reviewCommentCnt(pullRequest.getReviewComments())
-                .htmlUrl(pullRequest.getHtmlUrl())
-                .patchUrl(pullRequest.getPatchUrl())
-                .issueUrl(pullRequest.getIssueUrl())
-                .diffUrl(pullRequest.getDiffUrl())
-                .repo(targetRepo)
-                .approveCnt(0)
-                .build();
-        
-        PullRequest savedPullRequest = pullRequestRepository.save(newPullRequest);
-        
-        // Redis에서 prepareInfo 조회 후 관련 데이터 저장
-        saveRelatedDataFromRedis(savedPullRequest, targetRepo.getId(), pullRequest.getHead()
-                .getRef(), pullRequest.getBase()
-                .getRef());
-        
-        // PR 등록 완료 후 Redis 데이터 정리
-        cleanupRedisData(targetRepo.getId(), pullRequest.getHead()
-                .getRef(), pullRequest.getBase()
-                .getRef());
+                .orElseGet(() -> registerUser(event.getPullRequest().getUser()));
+
+        return pullRequestSyncService.synchronize(PullRequestSyncData.from(event), targetRepo, author);
     }
     
     private void saveRelatedDataFromRedis(PullRequest pullRequest, Long repoId, String source, String target) {

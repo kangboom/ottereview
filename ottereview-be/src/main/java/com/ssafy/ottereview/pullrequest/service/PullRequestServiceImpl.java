@@ -18,6 +18,7 @@ import com.ssafy.ottereview.pullrequest.dto.info.PullRequestPriorityInfo;
 import com.ssafy.ottereview.pullrequest.dto.info.PullRequestReviewCommentInfo;
 import com.ssafy.ottereview.pullrequest.dto.info.PullRequestReviewInfo;
 import com.ssafy.ottereview.pullrequest.dto.info.PullRequestReviewerInfo;
+import com.ssafy.ottereview.pullrequest.dto.info.PullRequestSyncData;
 import com.ssafy.ottereview.pullrequest.dto.request.PullRequestCreateRequest;
 import com.ssafy.ottereview.pullrequest.dto.response.PullRequestDetailResponse;
 import com.ssafy.ottereview.pullrequest.dto.response.PullRequestResponse;
@@ -42,7 +43,6 @@ import com.ssafy.ottereview.user.exception.UserErrorCode;
 import com.ssafy.ottereview.user.repository.UserRepository;
 import jakarta.transaction.Transactional;
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
@@ -69,6 +69,7 @@ public class PullRequestServiceImpl implements PullRequestService {
     private final PriorityRepository priorityRepository;
     private final DescriptionRepository descriptionRepository;
     private final PullRequestMapper pullRequestMapper;
+    private final PullRequestSyncService pullRequestSyncService;
     private final PreparationRedisRepository preparationRedisRepository;
     private final ReviewRepository reviewRepository;
     private final ReviewCommentRepository reviewCommentRepository;
@@ -312,16 +313,15 @@ public class PullRequestServiceImpl implements PullRequestService {
                 Repo targetRepo = repoRepository.findByRepoId(repo.getId())
                         .orElseThrow(() -> new BusinessException(RepoErrorCode.REPO_NOT_FOUND));
 
-                // 2. GitHub PR 응답을 PullRequest 엔티티로 변환
-                List<PullRequest> newPullRequests = new ArrayList<>();
-                List<Reviewer> newReviewers = new ArrayList<>();
                 for (GithubPrResponse githubPr : githubPrResponses) {
 
                     User author = userRepository.findByGithubId(githubPr.getAuthor()
                                     .getId())
                             .orElseGet(() -> registerUser(githubPr.getAuthor()));
 
-                    PullRequest pullRequest = pullRequestMapper.githubPrResponseToEntity(githubPr, author, targetRepo);
+                    PullRequest pullRequest = pullRequestSyncService
+                            .synchronize(PullRequestSyncData.from(githubPr), targetRepo, author)
+                            .pullRequest();
 
                     List<GHUser> users = githubPr.getRequestedReviewers();
                     for (GHUser user : users) {
@@ -329,22 +329,14 @@ public class PullRequestServiceImpl implements PullRequestService {
                                         .getId())
                                 .orElseGet(() -> registerUser(user));
 
-                        newReviewers.add(
-                                Reviewer.builder()
-                                        .pullRequest(pullRequest)
-                                        .user(reviewer)
-                                        .status(ReviewStatus.NONE)
-                                        .build());
+                        if (!reviewerRepository.existsByPullRequestAndUser(pullRequest, reviewer)) {
+                            reviewerRepository.save(Reviewer.builder()
+                                    .pullRequest(pullRequest)
+                                    .user(reviewer)
+                                    .status(ReviewStatus.NONE)
+                                    .build());
+                        }
                     }
-                    if(pullRequestRepository.existsByGithubId(pullRequest.getGithubId())){
-                        continue;
-                    }
-                    newPullRequests.add(pullRequest);
-                }
-
-                if (!newPullRequests.isEmpty()) {
-                    pullRequestRepository.saveAll(newPullRequests);
-                    reviewerRepository.saveAll(newReviewers);
                 }
             }
         } catch (Exception e) {
